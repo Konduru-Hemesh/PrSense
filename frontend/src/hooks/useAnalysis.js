@@ -29,6 +29,21 @@ function isGitHubPullRequestUrl(value) {
   }
 }
 
+function isGitHubRepositoryUrl(value) {
+  if (!value) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(value);
+    const host = parsedUrl.hostname.replace(/^www\./, '');
+    const segments = parsedUrl.pathname.split('/').filter(Boolean);
+    return host === 'github.com' && segments.length >= 2 && Boolean(segments[0]) && Boolean(segments[1]);
+  } catch (error) {
+    return false;
+  }
+}
+
 function startStageLoop(setPhase, stages, interval = 700) {
   let active = true;
   let index = 0;
@@ -60,6 +75,8 @@ export default function useAnalysis() {
   const navigate = useNavigate();
   const code = useAnalysisStore((state) => state.code);
   const prUrl = useAnalysisStore((state) => state.prUrl);
+  const repoUrl = useAnalysisStore((state) => state.repoUrl);
+  const reviewTarget = useAnalysisStore((state) => state.reviewTarget);
   const language = useAnalysisStore((state) => state.language);
   const analysisMode = useAnalysisStore((state) => state.analysisMode);
   const setStaticResult = useAnalysisStore((state) => state.setStaticResult);
@@ -76,8 +93,14 @@ export default function useAnalysis() {
     let stopLoop = null;
     try {
       const targetPrUrl = prUrl.trim();
+      const targetRepoUrl = repoUrl.trim();
 
-      if (isGitHubPullRequestUrl(targetPrUrl)) {
+      if (reviewTarget === 'pull-request') {
+        if (!isGitHubPullRequestUrl(targetPrUrl)) {
+          notify('Enter a valid public GitHub Pull Request URL.', 'warning');
+          return;
+        }
+
         stopLoop = startStageLoop(setPhase, ['fetching', 'extracting', 'static', 'ai', 'merging']);
         const response = await api.post('/api/analyze-pr', { prUrl: targetPrUrl, analysisMode });
 
@@ -90,13 +113,26 @@ export default function useAnalysis() {
         return;
       }
 
-      if (targetPrUrl) {
-        notify('Enter a valid public GitHub Pull Request URL.', 'warning');
+      if (reviewTarget === 'repository') {
+        if (!isGitHubRepositoryUrl(targetRepoUrl)) {
+          notify('Enter a valid public GitHub repository URL.', 'warning');
+          return;
+        }
+
+        stopLoop = startStageLoop(setPhase, ['fetching', 'extracting', 'static', 'ai', 'merging']);
+        const response = await api.post('/api/analyze-repo', { repoUrl: targetRepoUrl, analysisMode });
+
+        const payload = response.data || {};
+        setStaticResult(payload.staticResult || null);
+        setAiResult(payload.aiResult || null);
+        setMergedResult(payload.mergedResult || payload);
+        setPhase('done');
+        navigate('/results');
         return;
       }
 
       if (!code || !code.trim()) {
-        notify('Paste code or add a GitHub Pull Request URL before analyzing.', 'warning');
+        notify('Paste code or choose a GitHub target before analyzing.', 'warning');
         return;
       }
 
@@ -116,10 +152,10 @@ export default function useAnalysis() {
       setPhase('done');
       navigate('/results');
     } catch (error) {
-      if (isGitHubPullRequestUrl(prUrl.trim())) {
-        setError(error.response?.data?.error || 'Pull request analysis failed.');
+      if (reviewTarget === 'pull-request' || reviewTarget === 'repository') {
+        setError(error.response?.data?.error || 'Review analysis failed.');
         setPhase('error');
-        notify(error.response?.data?.error || 'Pull request analysis failed', 'error');
+        notify(error.response?.data?.error || 'Review analysis failed', 'error');
         return;
       }
 
@@ -138,7 +174,7 @@ export default function useAnalysis() {
       }
       setIsAnalyzing(false);
     }
-  }, [analysisMode, code, language, navigate, prUrl, setAiResult, setError, setMergedResult, setPhase, setStaticResult]);
+  }, [analysisMode, code, language, navigate, prUrl, repoUrl, reviewTarget, setAiResult, setError, setMergedResult, setPhase, setStaticResult]);
 
   return {
     analyze,

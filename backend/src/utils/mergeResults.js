@@ -162,8 +162,10 @@ function mergeResults(staticResult = {}, aiResult = {}, prMeta = {}, files = [])
   const maintainabilityIssues = [...grouped.performance, ...grouped.codeSmells];
 
   return {
-    reviewType: 'github-pr',
-    pr: prMeta,
+    reviewType: prMeta.reviewType || 'github-pr',
+    pr: prMeta.reviewType === 'github-repo' ? null : prMeta,
+    repo: prMeta.reviewType === 'github-repo' ? prMeta : null,
+    reviewMeta: prMeta,
     files: fileSummaries,
     issues: mergedIssues,
     bugs: grouped.bugs,

@@ -5,6 +5,7 @@ const morgan = require('morgan');
 const dotenv = require('dotenv');
 const analyzeRoutes = require('./routes/analyze');
 const prRoutes = require('./routes/pr');
+const repoRoutes = require('./routes/repo');
 const rateLimiter = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
@@ -26,6 +27,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api', analyzeRoutes);
 app.use('/api', prRoutes);
+app.use('/api', repoRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 

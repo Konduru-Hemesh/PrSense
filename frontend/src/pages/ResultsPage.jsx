@@ -23,7 +23,10 @@ export default function ResultsPage() {
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [selectedFilePath, setSelectedFilePath] = useState('all');
   const reviewType = mergedResult?.reviewType || 'code';
+  const isGitHubReview = reviewType === 'github-pr' || reviewType === 'github-repo';
   const files = Array.isArray(mergedResult?.files) ? mergedResult.files : [];
+  const repoMeta = mergedResult?.repo || mergedResult?.reviewMeta || null;
+  const reviewTitle = reviewType === 'github-repo' ? 'GitHub Repository Review' : 'GitHub Pull Request Review';
 
   useEffect(() => {
     if (!selectedIssue) {
@@ -60,12 +63,12 @@ export default function ResultsPage() {
 
   const filteredIssues = useMemo(() => {
     const categoryIssues = activeCategory === 'all' ? allIssues : (mergedResult?.[activeCategory] || []);
-    if (reviewType !== 'github-pr' || selectedFilePath === 'all') {
+    if (!isGitHubReview || selectedFilePath === 'all') {
       return categoryIssues;
     }
 
     return categoryIssues.filter((issue) => String(issue.filePath || issue.file || '').toLowerCase() === selectedFilePath.toLowerCase());
-  }, [activeCategory, allIssues, mergedResult, reviewType, selectedFilePath]);
+  }, [activeCategory, allIssues, isGitHubReview, mergedResult, selectedFilePath]);
 
   const improvementBullets = useMemo(() => {
     const source = mergedResult?.improvements;
@@ -94,7 +97,7 @@ export default function ResultsPage() {
   }, [mergedResult]);
 
   useEffect(() => {
-    if (reviewType !== 'github-pr') {
+    if (!isGitHubReview) {
       setSelectedFilePath('all');
       return;
     }
@@ -108,7 +111,7 @@ export default function ResultsPage() {
     if (!fileExists) {
       setSelectedFilePath(files[0].filename || 'all');
     }
-  }, [files, reviewType, selectedFilePath]);
+  }, [files, isGitHubReview, selectedFilePath]);
 
   if (!mergedResult) {
     return <Navigate to="/dashboard" replace />;
@@ -155,17 +158,21 @@ export default function ResultsPage() {
           </div>
         </GlassCard>
 
-        {reviewType === 'github-pr' ? (
+        {isGitHubReview ? (
           <>
             <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr] items-start">
               <ScoreGauge score={mergedResult.score} />
               <GlassCard className="h-full">
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan">GitHub Pull Request Review</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan">{reviewTitle}</p>
                 <h2 className="mt-3 text-2xl font-black tracking-tight text-text-primary">
-                  {mergedResult?.pr?.title || `${mergedResult?.pr?.owner || ''}/${mergedResult?.pr?.repo || ''} #${mergedResult?.pr?.pullNumber || ''}`}
+                  {reviewType === 'github-repo'
+                    ? `${repoMeta?.owner || ''}/${repoMeta?.repo || ''}`
+                    : mergedResult?.pr?.title || `${mergedResult?.pr?.owner || ''}/${mergedResult?.pr?.repo || ''} #${mergedResult?.pr?.pullNumber || ''}`}
                 </h2>
                 <p className="mt-4 text-sm leading-7 text-text-secondary">
-                  {mergedResult?.pr?.owner}/{mergedResult?.pr?.repo} · {mergedResult?.pr?.baseBranch || 'base'} → {mergedResult?.pr?.headBranch || 'head'}
+                  {reviewType === 'github-repo'
+                    ? `${repoMeta?.description || 'Public repository review'} · ${repoMeta?.defaultBranch || 'default'} branch`
+                    : `${mergedResult?.pr?.owner}/${mergedResult?.pr?.repo} · ${mergedResult?.pr?.baseBranch || 'base'} → ${mergedResult?.pr?.headBranch || 'head'}`}
                 </p>
                 <div className="mt-5 flex flex-wrap gap-2">
                   <DetectionBadge detectedBy="static" />
@@ -173,9 +180,18 @@ export default function ResultsPage() {
                   <DetectionBadge detectedBy="both" />
                 </div>
                 <div className="mt-5 flex flex-wrap gap-2 text-xs text-text-muted">
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{files.length} changed files</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">PR #{mergedResult?.pr?.pullNumber || 'n/a'}</span>
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{mergedResult?.pr?.state || 'open'}</span>
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{files.length} files analyzed</span>
+                  {reviewType === 'github-repo' ? (
+                    <>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{repoMeta?.stars || 0} stars</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{repoMeta?.defaultBranch || 'main'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">PR #{mergedResult?.pr?.pullNumber || 'n/a'}</span>
+                      <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1">{mergedResult?.pr?.state || 'open'}</span>
+                    </>
+                  )}
                 </div>
               </GlassCard>
             </div>
@@ -183,7 +199,7 @@ export default function ResultsPage() {
           </>
         ) : null}
 
-        {analysisMode === 'explain-code' && reviewType !== 'github-pr' ? (
+        {analysisMode === 'explain-code' && !isGitHubReview ? (
           <div className="grid gap-6 lg:grid-cols-[1.05fr_0.95fr] items-stretch">
             <GlassCard accent="cyan" className="h-full">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">What this code does</p>
@@ -221,7 +237,7 @@ export default function ResultsPage() {
 
         <SummaryStats analysis={mergedResult} />
 
-        {analysisMode === 'deep-review' && reviewType !== 'github-pr' ? (
+        {analysisMode === 'deep-review' && !isGitHubReview ? (
           <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr] items-start">
             <ScoreGauge score={mergedResult.score} />
             <GlassCard className="h-full">
@@ -237,7 +253,7 @@ export default function ResultsPage() {
           </div>
         ) : null}
 
-        {reviewType === 'github-pr' ? (
+        {isGitHubReview ? (
           <div className="grid gap-6 xl:grid-cols-[280px_1fr] items-start">
             <GlassCard className="h-full p-4">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">Changed Files</p>

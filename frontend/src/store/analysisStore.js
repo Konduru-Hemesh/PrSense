@@ -7,6 +7,8 @@ const defaultLanguage = LANGUAGE_OPTIONS[0]?.value || 'javascript';
 const initialState = {
   code: DEFAULT_SNIPPET,
   prUrl: '',
+  repoUrl: '',
+  reviewTarget: 'code',
   language: defaultLanguage,
   languageSource: 'auto',
   analysisMode: 'deep-review',
@@ -29,6 +31,8 @@ const useAnalysisStore = create(
       ...initialState,
       setCode: (code, codeOrigin = 'user') => set({ code, codeOrigin }),
       setPrUrl: (prUrl) => set({ prUrl }),
+      setRepoUrl: (repoUrl) => set({ repoUrl }),
+      setReviewTarget: (reviewTarget) => set({ reviewTarget }),
       setLanguage: (language, languageSource = 'manual') => set((state) => ({
         language,
         languageSource,
@@ -57,6 +61,8 @@ const useAnalysisStore = create(
       partialize: (state) => ({
         code: state.code,
         prUrl: state.prUrl,
+        repoUrl: state.repoUrl,
+        reviewTarget: state.reviewTarget,
         language: state.language,
         languageSource: state.languageSource,
         analysisMode: state.analysisMode,

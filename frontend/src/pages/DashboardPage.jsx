@@ -15,15 +15,19 @@ export default function DashboardPage() {
   const mergedResult = useAnalysisStore((state) => state.mergedResult);
   const language = useAnalysisStore((state) => state.language);
   const analysisMode = useAnalysisStore((state) => state.analysisMode);
+  const reviewTarget = useAnalysisStore((state) => state.reviewTarget);
   const uploadedFileName = useAnalysisStore((state) => state.uploadedFileName);
   const prUrl = useAnalysisStore((state) => state.prUrl);
+  const repoUrl = useAnalysisStore((state) => state.repoUrl);
   const setPrUrl = useAnalysisStore((state) => state.setPrUrl);
+  const setRepoUrl = useAnalysisStore((state) => state.setRepoUrl);
+  const setReviewTarget = useAnalysisStore((state) => state.setReviewTarget);
   const setAnalysisMode = useAnalysisStore((state) => state.setAnalysisMode);
   const [tipsOpen, setTipsOpen] = useState(true);
 
   const phaseCopy = {
-    fetching: '🌐 Fetching pull request...',
-    extracting: '🧩 Extracting changed files...',
+    fetching: reviewTarget === 'code' ? '🌐 Preparing analysis...' : '🌐 Fetching source... ',
+    extracting: reviewTarget === 'code' ? '🧩 Extracting code...' : '🧩 Extracting files...',
     static: '⚡ Running static rules...',
     ai: '🤖 AI analyzing...',
     merging: '✦ Combining results...',
@@ -59,21 +63,61 @@ export default function DashboardPage() {
           <GlassCard>
             <div className="space-y-4">
               <div>
-                <p className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">GitHub Pull Request</p>
-                <div className="rounded-2xl border border-white/10 bg-surface p-3 shadow-inner shadow-black/20">
-                  <input
-                    type="url"
-                    value={prUrl}
-                    onChange={(event) => setPrUrl(event.target.value)}
-                    placeholder="https://github.com/user/repo/pull/12"
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-cyan/40 focus:bg-white/[0.08]"
-                  />
-                  <p className="mt-3 text-xs leading-5 text-text-muted">
-                    Paste a public GitHub PR URL to review the diff instead of the editor content.
-                  </p>
+                <p className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">Review target</p>
+                <div className="grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-surface p-1 sm:grid-cols-3">
+                  {[
+                    { value: 'code', label: 'Normal Code Analyzer', description: 'Paste code or upload a file' },
+                    { value: 'pull-request', label: 'GitHub Pull Request', description: 'Review a public PR URL' },
+                    { value: 'repository', label: 'GitHub Repository', description: 'Scan a public repo URL' },
+                  ].map((target) => (
+                    <button
+                      key={target.value}
+                      type="button"
+                      aria-label={`Set review target to ${target.label}`}
+                      onClick={() => setReviewTarget(target.value)}
+                      className={`rounded-xl px-3 py-3 text-left transition ${reviewTarget === target.value ? 'bg-white/10 text-text-primary shadow-glow-purple' : 'text-text-secondary hover:bg-white/5 hover:text-text-primary'}`}
+                    >
+                      <span className="block text-sm font-semibold">{target.label}</span>
+                      <span className="mt-1 block text-xs leading-5 text-text-muted">{target.description}</span>
+                    </button>
+                  ))}
                 </div>
               </div>
-              <LanguageSelector />
+
+              {reviewTarget === 'code' ? <LanguageSelector /> : null}
+
+              {reviewTarget === 'code' ? (
+                <FileUploader />
+              ) : reviewTarget === 'pull-request' ? (
+                <div>
+                  <p className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">GitHub Pull Request</p>
+                  <div className="rounded-2xl border border-white/10 bg-surface p-3 shadow-inner shadow-black/20">
+                    <input
+                      type="url"
+                      value={prUrl}
+                      onChange={(event) => setPrUrl(event.target.value)}
+                      placeholder="https://github.com/user/repo/pull/12"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-cyan/40 focus:bg-white/[0.08]"
+                    />
+                    <p className="mt-3 text-xs leading-5 text-text-muted">Paste a public GitHub PR URL to review the diff instead of the editor content.</p>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">GitHub Repository</p>
+                  <div className="rounded-2xl border border-white/10 bg-surface p-3 shadow-inner shadow-black/20">
+                    <input
+                      type="url"
+                      value={repoUrl}
+                      onChange={(event) => setRepoUrl(event.target.value)}
+                      placeholder="https://github.com/user/repo"
+                      className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-primary outline-none transition placeholder:text-text-muted focus:border-cyan/40 focus:bg-white/[0.08]"
+                    />
+                    <p className="mt-3 text-xs leading-5 text-text-muted">Paste a public GitHub repository URL to analyze the source files in that repo.</p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <p className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">Review mode</p>
                 <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-surface p-1">
@@ -94,7 +138,7 @@ export default function DashboardPage() {
                   ))}
                 </div>
               </div>
-              <FileUploader />
+
               <AnalyzeButton />
               {phase !== 'idle' ? (
                 <div className="flex items-center gap-2 rounded-2xl border border-white/5 bg-white/[0.03] px-4 py-3 text-sm text-text-secondary">
@@ -124,6 +168,7 @@ export default function DashboardPage() {
               <div className="mt-4 space-y-3 text-sm text-text-secondary">
                 <p>- Upload a source file to auto-detect language.</p>
                 <p>- Paste a GitHub PR URL to review only the changed patch files.</p>
+                <p>- Paste a GitHub repository URL to scan sampled source files across the repo.</p>
                 <p>- Static results appear first, then AI findings merge in without blocking the flow.</p>
                 <p>- Reanalyze after edits to compare how the score changes.</p>
                 <p>- Current static detections: {formatIssueCount(staticIssues.length)}</p>
@@ -135,10 +180,18 @@ export default function DashboardPage() {
           <GlassCard accent="cyan">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-text-muted">Current Input</p>
             <div className="mt-4 space-y-2 text-sm text-text-secondary">
+              <p><span className="text-text-primary">Target:</span> {reviewTarget}</p>
               <p><span className="text-text-primary">Language:</span> {language}</p>
               <p><span className="text-text-primary">Mode:</span> {analysisMode}</p>
-              <p><span className="text-text-primary">PR URL:</span> {prUrl || 'No PR URL provided'}</p>
-              <p><span className="text-text-primary">Source:</span> {uploadedFileName || 'Paste code or upload a file'}</p>
+              {reviewTarget === 'pull-request' ? (
+                <p><span className="text-text-primary">PR URL:</span> {prUrl || 'No PR URL provided'}</p>
+              ) : null}
+              {reviewTarget === 'repository' ? (
+                <p><span className="text-text-primary">Repo URL:</span> {repoUrl || 'No repository URL provided'}</p>
+              ) : null}
+              {reviewTarget === 'code' ? (
+                <p><span className="text-text-primary">Source:</span> {uploadedFileName || 'Paste code or upload a file'}</p>
+              ) : null}
             </div>
           </GlassCard>
         </div>

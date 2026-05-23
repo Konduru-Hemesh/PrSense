@@ -11,6 +11,11 @@ const pullRequestSchema = Joi.object({
   analysisMode: Joi.string().valid('deep-review', 'explain-code').default('deep-review'),
 });
 
+const repoSchema = Joi.object({
+  repoUrl: Joi.string().uri().required(),
+  analysisMode: Joi.string().valid('deep-review', 'explain-code').default('deep-review'),
+});
+
 const explainSchema = Joi.object({
   issue: Joi.object({
     title: Joi.string().min(1).required(),
@@ -48,5 +53,6 @@ function validateBody(schema) {
 module.exports = {
   validateAnalyzeRequest: validateBody(analyzeSchema),
   validatePullRequestRequest: validateBody(pullRequestSchema),
+  validateRepoRequest: validateBody(repoSchema),
   validateExplainRequest: validateBody(explainSchema),
 };

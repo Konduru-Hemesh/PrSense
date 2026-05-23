@@ -349,6 +349,136 @@ function analyzePullRequestFiles(files = []) {
   };
 }
 
+function getLineNumberFromIndex(text = '', index = 0) {
+  return text.slice(0, index).split('\n').length;
+}
+
+function getContextAroundLine(text = '', lineNumber = 1, radius = 2) {
+  const lines = text.split('\n');
+  const start = Math.max(0, lineNumber - 1 - radius);
+  const end = Math.min(lines.length, lineNumber + radius);
+  return lines.slice(start, end).join('\n');
+}
+
+function createSourceIssue(rule, file, line, snippet) {
+  return {
+    id: `${rule.id}_${file.filename}_${line || 0}_${Math.random().toString(36).slice(2, 8)}`,
+    source: 'Static Engine',
+    detectedBy: 'static',
+    category: rule.category,
+    categoryKey: rule.categoryKey,
+    severity: rule.severity,
+    title: rule.title,
+    description: rule.description,
+    line,
+    file: file.filename,
+    filePath: file.filename,
+    suggestion: rule.suggestion,
+    impact: rule.impact,
+    codeContext: snippet ? String(snippet).trim() : '',
+    status: file.status,
+  };
+}
+
+function analyzeRepositoryFile(file) {
+  const content = String(file.content || '');
+  if (!content.trim()) {
+    return [];
+  }
+
+  const issues = [];
+  const seen = new Set();
+  const textRules = rules.filter((rule) => file.language !== 'plaintext');
+
+  textRules.forEach((rule) => {
+    const baseRegex = rule.pattern;
+    const flags = baseRegex.flags.includes('g') ? baseRegex.flags : `${baseRegex.flags}g`;
+    const regex = new RegExp(baseRegex.source, flags);
+    let match = regex.exec(content);
+
+    while (match) {
+      const line = getLineNumberFromIndex(content, match.index);
+      const dedupeKey = `${file.filename}:${rule.id}:${line || 0}`;
+      if (!seen.has(dedupeKey)) {
+        seen.add(dedupeKey);
+        issues.push(createSourceIssue(rule, file, line, getContextAroundLine(content, line, 2)));
+      }
+
+      regex.lastIndex = match.index + Math.max(match[0].length, 1);
+      match = regex.exec(content);
+    }
+  });
+
+  const joinedContent = content;
+  if (/function\s+\w+\s*\([^)]*\)\s*\{[\s\S]{700,}?\}/i.test(joinedContent)) {
+    issues.push(createSourceIssue({
+      id: 'smell_large_function_repo',
+      category: 'Code Smells',
+      categoryKey: 'codeSmells',
+      severity: 'MEDIUM',
+      title: 'Large function with multiple responsibilities',
+      description: 'This file appears to contain a large function that may be doing too much work in one place.',
+      suggestion: 'Split the logic into smaller, focused helper functions.',
+      impact: 'Large functions are harder to reason about and safely modify.',
+    }, file, 1, getContextAroundLine(content, 1, 2)));
+  }
+
+  return issues;
+}
+
+function analyzeRepositoryFiles(files = []) {
+  const allIssues = files.flatMap((file) => analyzeRepositoryFile(file));
+  const grouped = allIssues.reduce(
+    (accumulator, issue) => {
+      if (issue.categoryKey === 'security') {
+        accumulator.security.push(issue);
+      } else if (issue.categoryKey === 'performance') {
+        accumulator.performance.push(issue);
+      } else {
+        accumulator.codeSmells.push(issue);
+      }
+      return accumulator;
+    },
+    { security: [], performance: [], codeSmells: [] },
+  );
+
+  const sortedIssues = [...allIssues].sort((left, right) => {
+    const severityDelta = severityRank[left.severity] - severityRank[right.severity];
+    if (severityDelta !== 0) {
+      return severityDelta;
+    }
+    const categoryDelta = String(left.category).localeCompare(String(right.category));
+    if (categoryDelta !== 0) {
+      return categoryDelta;
+    }
+    return String(left.file || '').localeCompare(String(right.file || ''));
+  });
+
+  const score = Math.max(0, 100 - allIssues.reduce((sum, issue) => {
+    if (issue.severity === 'CRITICAL') return sum + 25;
+    if (issue.severity === 'HIGH') return sum + 15;
+    if (issue.severity === 'MEDIUM') return sum + 8;
+    return sum + 3;
+  }, 0));
+
+  return {
+    issues: sortedIssues,
+    security: grouped.security,
+    performance: grouped.performance,
+    codeSmells: grouped.codeSmells,
+    bugs: [],
+    score,
+    securityScore: Math.max(0, 100 - grouped.security.reduce((sum, issue) => sum + (issue.severity === 'CRITICAL' ? 25 : issue.severity === 'HIGH' ? 15 : issue.severity === 'MEDIUM' ? 8 : 3), 0)),
+    maintainabilityScore: Math.max(0, 100 - [...grouped.performance, ...grouped.codeSmells].reduce((sum, issue) => sum + (issue.severity === 'CRITICAL' ? 25 : issue.severity === 'HIGH' ? 15 : issue.severity === 'MEDIUM' ? 8 : 3), 0)),
+    summary: allIssues.length > 0 ? `Repository scan flagged ${allIssues.length} issue${allIssues.length === 1 ? '' : 's'} across the selected source files.` : 'Repository scan did not detect obvious rule-based problems in the sampled files.',
+    totalIssues: allIssues.length,
+    criticalCount: allIssues.filter((issue) => issue.severity === 'CRITICAL').length,
+    timestamp: Date.now(),
+    detectedBy: 'static',
+  };
+}
+
 module.exports = {
   analyzePullRequestFiles,
+  analyzeRepositoryFiles,
 };

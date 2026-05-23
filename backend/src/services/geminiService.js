@@ -373,8 +373,126 @@ async function analyzePullRequestSemantic({ pr, files, analysisMode = 'deep-revi
   }
 }
 
+function buildRepoAnalyzePrompt(repo, files, analysisMode, staticSummary = '') {
+  const trimmedFiles = files.map((file) => ({
+    filename: file.filename,
+    language: file.language,
+    status: file.status,
+    size: file.size,
+    content: String(file.content || '').slice(0, 4000),
+  }));
+
+  return [
+    'You are reviewing a public GitHub repository for an AI code review platform.',
+    'Analyze only the source files provided below.',
+    'Focus on logic flaws, security concerns, performance issues, maintainability, and architecture.',
+    `Review mode: ${analysisMode}`,
+    staticSummary ? `Static engine summary: ${staticSummary}` : '',
+    'Return ONLY strict JSON with this schema:',
+    '{',
+    '  "issues": [',
+    '    {',
+    '      "source": "AI Analysis",',
+    '      "category": "Security|Performance|Code Smells|Best Practices",',
+    '      "severity": "CRITICAL|HIGH|MEDIUM|LOW",',
+    '      "title": "string",',
+    '      "description": "string",',
+    '      "file": "string",',
+    '      "line": <integer or null>,',
+    '      "suggestion": "string",',
+    '      "impact": "string"',
+    '    }',
+    '  ],',
+    '  "score": <integer 0-100>,',
+    '  "summary": "string"',
+    '}',
+    '',
+    'Repository metadata:',
+    JSON.stringify(repo),
+    '',
+    'Source files:',
+    JSON.stringify(trimmedFiles, null, 2),
+  ].filter(Boolean).join('\n');
+}
+
+function normalizeRepoIssue(issue, fallbackFile = 'Unknown file') {
+  if (!issue || typeof issue !== 'object') {
+    return null;
+  }
+
+  const category = String(issue.category || 'Code Smells').trim();
+  const categoryKey = category.toLowerCase().includes('security')
+    ? 'security'
+    : category.toLowerCase().includes('performance')
+      ? 'performance'
+      : 'codeSmells';
+
+  return {
+    id: issue.id || `ai_repo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    source: issue.source || 'AI Analysis',
+    detectedBy: 'ai',
+    category,
+    categoryKey,
+    severity: issue.severity || 'MEDIUM',
+    title: issue.title || 'Untitled issue',
+    description: issue.description || '',
+    file: issue.file || fallbackFile,
+    filePath: issue.file || fallbackFile,
+    line: Number.isFinite(issue.line) ? issue.line : null,
+    suggestion: issue.suggestion || '',
+    impact: issue.impact || '',
+  };
+}
+
+function normalizeRepoResult(payload, fallbackSummary = '') {
+  const safePayload = payload && typeof payload === 'object' ? payload : {};
+  const issues = Array.isArray(safePayload.issues)
+    ? safePayload.issues.map((issue) => normalizeRepoIssue(issue)).filter(Boolean)
+    : [];
+
+  return {
+    issues,
+    bugs: [],
+    security: issues.filter((issue) => issue.categoryKey === 'security'),
+    performance: issues.filter((issue) => issue.categoryKey === 'performance'),
+    codeSmells: issues.filter((issue) => issue.categoryKey === 'codeSmells'),
+    score: Number.isFinite(safePayload.score) ? Math.max(0, Math.min(100, Math.round(safePayload.score))) : 75,
+    summary: typeof safePayload.summary === 'string' ? safePayload.summary : fallbackSummary,
+    timestamp: Date.now(),
+    detectedBy: 'ai',
+  };
+}
+
+async function analyzeRepositorySemantic({ repo, files, analysisMode = 'deep-review', staticSummary = '' }) {
+  const model = getGeminiModel();
+
+  if (!model) {
+    return normalizeRepoResult({
+      issues: [],
+      score: 75,
+      summary: staticSummary || 'Gemini is unavailable, so only the static engine findings are shown.',
+    }, staticSummary);
+  }
+
+  try {
+    const prompt = buildRepoAnalyzePrompt(repo, files, analysisMode, staticSummary);
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
+    const parsed = parseJsonResponse(text);
+    return normalizeRepoResult(parsed, staticSummary);
+  } catch (error) {
+    return normalizeRepoResult({
+      issues: [],
+      score: 75,
+      summary: staticSummary || 'Gemini repository review was unavailable, so the static engine results are shown.',
+    }, staticSummary);
+  }
+}
+
 module.exports = {
   analyzeCode,
   analyzePullRequestSemantic,
+  analyzeRepositorySemantic,
   explainFix,
 };
