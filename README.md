@@ -36,6 +36,75 @@ This README documents production deployment, required configuration, security no
 
 ---
 
+## Architecture Diagram
+
+Below is the complete architecture diagram for PRSense. It shows the optional n8n gateway, the webhook receiver, queue/worker, analyzer components (heuristic static checks, Semgrep, LLM/Gemini), merge/posting flow, observability, and the frontend.
+
+```mermaid
+flowchart TB
+  subgraph GitHub[GitHub / GitLab]
+    GH[Pull Requests & Webhooks]
+  end
+
+  subgraph Optional[n8n (optional gateway)]
+    N8N[n8n workflow]
+  end
+
+  subgraph Backend[PRSense Backend]
+    WR[Webhook Receiver]
+    Q[Queue]
+    W[PR Worker]
+    GS[githubService]
+    AUD[Audit Service]
+    MET[Metrics Service (/metrics)]
+    DATA[backend/data (settings, audit.log)]
+  end
+
+  subgraph Analyzers[Analyzers]
+    SA[staticAnalyzer.js]
+    SG[semgrepRunner.js]
+    LLM[geminiService.js (LLM reviewer)]
+    MR[mergeResults.js]
+  end
+
+  subgraph Frontend[React Frontend]
+    FE[Dashboard & Controls]
+  end
+
+  GH -->|webhook| N8N
+  GH -->|webhook| WR
+  N8N -->|forward webhook| WR
+
+  WR -->|verify HMAC & enqueue| Q
+  Q -->|job| W
+
+  W --> SA
+  W --> SG
+  W --> LLM
+  SA --> MR
+  SG --> MR
+  LLM --> MR
+
+  MR -->|findings| W
+  W -->|post checks/comments| GS
+  GS -->|GitHub API| GH
+
+  W --> AUD
+  W --> MET
+  AUD --> DATA
+
+  FE -->|read/write settings & view audit| BACKEND_API[/API endpoints/]
+  BACKEND_API --> WR
+  BACKEND_API --> AUD
+  BACKEND_API --> MET
+
+  style Backend fill:#f9f,stroke:#333,stroke-width:1px
+  style Analyzers fill:#fffae6,stroke:#333,stroke-width:1px
+  style Frontend fill:#e6f7ff,stroke:#333,stroke-width:1px
+  style Optional fill:#f0f0f0,stroke:#333,stroke-dasharray: 5 5
+  style GitHub fill:#fff0f0,stroke:#333,stroke-width:1px
+```
+
 ## Prerequisites
 
 - Node.js 18+ (for local dev)
