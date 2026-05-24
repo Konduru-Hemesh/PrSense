@@ -8,11 +8,17 @@ const { runSemgrepOnFiles } = require('../analyzers/semgrepRunner');
 const { analyzePullRequestSemantic } = require('../services/geminiService');
 const { mergeResults } = require('../utils/mergeResults');
 const { postCheckRun, createPRComment } = require('../services/githubService');
+const { getSettingsForRepo } = require('../services/settingsService');
+const { recordEvent } = require('../services/auditService');
+const metrics = require('../services/metricsService');
 
 async function process(job) {
   const { owner, repo, pullNumber, analysisMode = 'deep-review' } = job;
   // eslint-disable-next-line no-console
   console.log(`Processing PR ${owner}/${repo}#${pullNumber}`);
+
+  const endTimer = metrics.prProcessingTime.startTimer();
+  metrics.prProcessed.inc();
 
   try {
     const [pullRequest, files] = await Promise.all([
@@ -26,6 +32,7 @@ async function process(job) {
     // run semgrep where available and merge findings into static result
     try {
       const semgrepIssues = await runSemgrepOnFiles(patchContexts);
+      metrics.semgrepRuns.inc();
       if (Array.isArray(semgrepIssues) && semgrepIssues.length) {
         staticResult.issues = [...semgrepIssues, ...(staticResult.issues || [])];
         staticResult.totalIssues = staticResult.issues.length;
@@ -80,6 +87,9 @@ async function process(job) {
       const issues = mergedResult.issues || [];
       const top = issues.slice(0, 6);
       const { computePositionFromPatch } = require('../utils/patchUtils');
+      const settings = getSettingsForRepo(owner, repo) || { autoPostComments: true, commentThreshold: 0 };
+      const autoPost = settings.autoPostComments !== false;
+      const threshold = Number.isFinite(settings.commentThreshold) ? settings.commentThreshold : 0;
       for (const issue of top) {
         try {
           const path = issue.filePath || issue.file || null;
@@ -93,7 +103,19 @@ async function process(job) {
           }
 
           const body = `PRSense: ${issue.title}\n\n${issue.description || issue.suggestion || ''}\n\nSeverity: ${issue.severity || 'MEDIUM'}`;
-          await createPRComment(owner, repo, pullNumber, body, path, line, pullRequest.head?.sha, position);
+          // If comment threshold set and mergedResult.score is below threshold (or above?)
+          // We'll interpret threshold as minimum score required to auto-post comments; if mergedResult.score < threshold, skip posting.
+          const shouldPost = autoPost && (typeof threshold !== 'number' || mergedResult.score >= threshold);
+
+          if (shouldPost) {
+            await createPRComment(owner, repo, pullNumber, body, path, line, pullRequest.head?.sha, position);
+            metrics.commentsPosted.inc();
+            recordEvent({ type: 'comment.posted', repo: `${owner}/${repo}`, pullNumber, issue: { id: issue.id, title: issue.title, file: path, line } });
+          } else {
+            // persist proposed comment for audit / draft review
+            metrics.commentsSkipped.inc();
+            recordEvent({ type: 'comment.proposed', repo: `${owner}/${repo}`, pullNumber, issue: { id: issue.id, title: issue.title, file: path, line }, body });
+          }
         } catch (inner) {
           // eslint-disable-next-line no-console
           console.warn('Failed to create PR comment for issue', inner.message || inner);
@@ -112,6 +134,8 @@ async function process(job) {
       score: mergedResult.score,
       totalIssues: mergedResult.totalIssues || (mergedResult?.issues || []).length,
     });
+
+    endTimer();
 
     return mergedResult;
   } catch (error) {

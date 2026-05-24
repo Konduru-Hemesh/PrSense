@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { enqueue } = require('../jobs/bullQueue');
+const { recordEvent } = require('../services/auditService');
 
 function verifySignature(rawBody, signature, secret) {
   if (!signature || !secret) return false;
@@ -38,7 +39,8 @@ async function handleGithubWebhook(req, res, next) {
         const pullNumber = pr.number;
 
         if (owner && repository && Number.isFinite(pullNumber)) {
-          enqueue({ owner, repo: repository, pullNumber, analysisMode: 'deep-review' });
+            recordEvent({ type: 'webhook.received', provider: 'github', owner, repo: repository, pullNumber, action: action });
+            enqueue({ owner, repo: repository, pullNumber, analysisMode: 'deep-review' });
         }
       }
     }

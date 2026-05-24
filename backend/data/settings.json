@@ -1,0 +1,11 @@
+{
+  "global": {
+    "autoPostComments": true,
+    "commentThreshold": 0
+  },
+  "repos": {},
+  "settings": {
+    "autoPostComments": true,
+    "commentThreshold": 0
+  }
+}

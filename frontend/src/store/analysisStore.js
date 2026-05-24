@@ -29,6 +29,11 @@ const useAnalysisStore = create(
   persist(
     (set) => ({
       ...initialState,
+      // new settings
+      autoPostComments: true,
+      commentThreshold: 0,
+      setAutoPostComments: (autoPostComments) => set({ autoPostComments }),
+      setCommentThreshold: (commentThreshold) => set({ commentThreshold }),
       setCode: (code, codeOrigin = 'user') => set({ code, codeOrigin }),
       setPrUrl: (prUrl) => set({ prUrl }),
       setRepoUrl: (repoUrl) => set({ repoUrl }),

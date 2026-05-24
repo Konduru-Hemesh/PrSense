@@ -7,8 +7,10 @@ const analyzeRoutes = require('./routes/analyze');
 const prRoutes = require('./routes/pr');
 const repoRoutes = require('./routes/repo');
 const webhooksRoutes = require('./routes/webhooks');
+const settingsRoutes = require('./routes/settings');
 const rateLimiter = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
+const { client: promClient } = require('./services/metricsService');
 
 dotenv.config();
 
@@ -30,8 +32,19 @@ app.use('/api', analyzeRoutes);
 app.use('/api', prRoutes);
 app.use('/api', repoRoutes);
 app.use('/api/webhooks', webhooksRoutes);
+app.use('/api', settingsRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', promClient.register.contentType);
+    res.end(await promClient.register.metrics());
+  } catch (e) {
+    res.status(500).end(e && e.message ? e.message : 'error');
+  }
+});
 
 const server = app.listen(port, () => {
   console.log(`PRSense backend listening on port ${port}`);
