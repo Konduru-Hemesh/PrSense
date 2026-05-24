@@ -42,33 +42,33 @@ Below is the complete architecture diagram for PRSense. It shows the optional n8
 
 ```mermaid
 flowchart TB
-  subgraph GitHub[GitHub / GitLab]
-    GH[Pull Requests & Webhooks]
+  subgraph GitHub
+    GH["Pull Requests & Webhooks"]
   end
 
-  subgraph Optional[n8n (optional gateway)]
-    N8N[n8n workflow]
+  subgraph Optional
+    N8N["n8n (optional gateway)"]
   end
 
-  subgraph Backend[PRSense Backend]
-    WR[Webhook Receiver]
-    Q[Queue]
-    W[PR Worker]
-    GS[githubService]
-    AUD[Audit Service]
-    MET[Metrics Service (/metrics)]
-    DATA[backend/data (settings, audit.log)]
+  subgraph Backend
+    WR["Webhook Receiver"]
+    Q["Queue"]
+    W["PR Worker"]
+    GS["githubService"]
+    AUD["Audit Service"]
+    MET["Metrics Service (/metrics)"]
+    DATA["backend/data (settings, audit.log)"]
   end
 
-  subgraph Analyzers[Analyzers]
-    SA[staticAnalyzer.js]
-    SG[semgrepRunner.js]
-    LLM[geminiService.js (LLM reviewer)]
-    MR[mergeResults.js]
+  subgraph Analyzers
+    SA["staticAnalyzer.js"]
+    SG["semgrepRunner.js"]
+    LLM["geminiService.js (LLM reviewer)"]
+    MR["mergeResults.js"]
   end
 
-  subgraph Frontend[React Frontend]
-    FE[Dashboard & Controls]
+  subgraph Frontend
+    FE["Dashboard & Controls"]
   end
 
   GH -->|webhook| N8N
@@ -93,7 +93,7 @@ flowchart TB
   W --> MET
   AUD --> DATA
 
-  FE -->|read/write settings & view audit| BACKEND_API[/API endpoints/]
+  FE -->|read/write settings & view audit| BACKEND_API["/API endpoints/"]
   BACKEND_API --> WR
   BACKEND_API --> AUD
   BACKEND_API --> MET
