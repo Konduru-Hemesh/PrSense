@@ -1,0 +1,273 @@
+{
+  "name": "PRSense - GitHub Webhook Forwarder (env-configurable, retries)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prsense-github-webhook",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.PRSENSE_BACKEND_URL || 'http://localhost:3001') + '/api/webhooks/github' }}",
+        "method": "POST",
+        "options": {
+          "headers": [
+            {
+              "name": "x-hub-signature-256",
+              "value": "={{ $json[\"headers\"] ? ($json.headers['x-hub-signature-256'] || $json.headers['X-Hub-Signature-256']) : ($headers['x-hub-signature-256'] || $headers['X-Hub-Signature-256']) }}"
+            },
+            {
+              "name": "x-github-event",
+              "value": "={{ $json[\"headers\"] ? ($json.headers['x-github-event'] || $json.headers['X-GitHub-Event']) : ($headers['x-github-event'] || $headers['X-GitHub-Event']) }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "bodyParametersJson": "={{ $json }}",
+          "binaryData": false
+        },
+        "responseFormat": "json",
+        "options": {}
+      },
+      "name": "Forward to PRSense",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [420, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json[\"statusCode\"] || $json[\"status\"] || 200 }}",
+              "operation": "isGreaterThan",
+              "value2": 399
+            }
+          ]
+        }
+      },
+      "name": "If Failure",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "waitTime": 10
+      },
+      "name": "Wait 10s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [860, 220]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.PRSENSE_BACKEND_URL || 'http://localhost:3001') + '/api/webhooks/github' }}",
+        "method": "POST",
+        "options": {
+          "headers": [
+            {
+              "name": "x-hub-signature-256",
+              "value": "={{ $json[\"headers\"] ? ($json.headers['x-hub-signature-256'] || $json.headers['X-Hub-Signature-256']) : ($headers['x-hub-signature-256'] || $headers['X-Hub-Signature-256']) }}"
+            },
+            {
+              "name": "x-github-event",
+              "value": "={{ $json[\"headers\"] ? ($json.headers['x-github-event'] || $json.headers['X-GitHub-Event']) : ($headers['x-github-event'] || $headers['X-GitHub-Event']) }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "bodyParametersJson": "={{ $json }}",
+          "binaryData": false
+        },
+        "responseFormat": "json",
+        "options": {}
+      },
+      "name": "Retry 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1080, 220]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json[\"statusCode\"] || $json[\"status\"] || 200 }}",
+              "operation": "isGreaterThan",
+              "value2": 399
+            }
+          ]
+        }
+      },
+      "name": "If Failure 2",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1300, 220]
+    },
+    {
+      "parameters": {
+        "waitTime": 20
+      },
+      "name": "Wait 20s",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1520, 140]
+    },
+    {
+      "parameters": {
+        "url": "={{ ($env.PRSENSE_BACKEND_URL || 'http://localhost:3001') + '/api/webhooks/github' }}",
+        "method": "POST",
+        "options": {
+          "headers": [
+            {
+              "name": "x-hub-signature-256",
+              "value": "={{ $json[\"headers\"] ? ($json.headers['x-hub-signature-256'] || $json.headers['X-Hub-Signature-256']) : ($headers['x-hub-signature-256'] || $headers['X-Hub-Signature-256']) }}"
+            },
+            {
+              "name": "x-github-event",
+              "value": "={{ $json[\"headers\"] ? ($json.headers['x-github-event'] || $json.headers['X-GitHub-Event']) : ($headers['x-github-event'] || $headers['X-GitHub-Event']) }}"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ],
+          "bodyParametersJson": "={{ $json }}",
+          "binaryData": false
+        },
+        "responseFormat": "json",
+        "options": {}
+      },
+      "name": "Retry 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1740, 140]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Simple logger: emit a compact log for the forwarded event and response.\nconst inItem = items[0];\nconst out = {\n  forwardedAt: new Date().toISOString(),\n  webhookPath: '/prsense-github-webhook',\n  requestSummary: { headers: inItem.json.headers ? Object.keys(inItem.json.headers) : [], bodyKeys: Object.keys(inItem.json || {}) },\n  response: inItem.json.response || inItem.json || {}\n};\nconsole.log('PRSense n8n forwarder:', JSON.stringify(out));\nreturn items;"
+      },
+      "name": "Logger",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1960, 180]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Forward to PRSense",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to PRSense": {
+      "main": [
+        [
+          {
+            "node": "If Failure",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Failure": {
+      "main": [
+        [
+          {
+            "node": "Wait 10s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Wait 10s": {
+      "main": [
+        [
+          {
+            "node": "Retry 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry 1": {
+      "main": [
+        [
+          {
+            "node": "If Failure 2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Failure 2": {
+      "main": [
+        [
+          {
+            "node": "Wait 20s",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Wait 20s": {
+      "main": [
+        [
+          {
+            "node": "Retry 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry 2": {
+      "main": [
+        [
+          {
+            "node": "Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "prsense-github-webhook"
+}

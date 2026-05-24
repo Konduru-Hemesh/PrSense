@@ -1,17 +1,40 @@
 const GITHUB_API_BASE = 'https://api.github.com';
 
-function buildHeaders() {
-  const headers = {
+const { getInstallationTokenForRepo } = require('./githubAppAuth');
+
+function baseHeaders() {
+  return {
     Accept: 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'prsense-hackathon-app',
   };
+}
 
-  if (process.env.GITHUB_TOKEN) {
+async function apiFetch(url, opts = {}, owner, repo) {
+  const headers = Object.assign({}, baseHeaders(), opts.headers || {});
+
+  // If GITHUB_APP_ID configured, prefer installation token per-repo
+  if (process.env.GITHUB_APP_ID && owner && repo) {
+    try {
+      const token = await getInstallationTokenForRepo(owner, repo);
+      headers.Authorization = `Bearer ${token}`;
+    } catch (err) {
+      // fallback to environment token
+      if (process.env.GITHUB_TOKEN) headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+    }
+  } else if (process.env.GITHUB_TOKEN) {
     headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   }
 
-  return headers;
+  const response = await fetch(url, Object.assign({}, opts, { headers }));
+  if (!response.ok) {
+    const body = await response.text();
+    const error = new Error(`GitHub API request failed (${response.status}): ${body.slice(0, 200)}`);
+    error.status = response.status === 404 ? 404 : 502;
+    throw error;
+  }
+
+  return response.json();
 }
 
 function parsePullRequestUrl(prUrl) {
@@ -100,21 +123,13 @@ function parseGitHubRepoUrl(repoUrl) {
   };
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url, { headers: buildHeaders() });
-  if (!response.ok) {
-    const body = await response.text();
-    const error = new Error(`GitHub API request failed (${response.status}): ${body.slice(0, 200)}`);
-    error.status = response.status === 404 ? 404 : 502;
-    throw error;
-  }
-
-  return response.json();
+async function fetchJson(url, owner, repo) {
+  return apiFetch(url, {}, owner, repo);
 }
 
 async function fetchPullRequestMeta(owner, repo, pullNumber) {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullNumber}`;
-  return fetchJson(url);
+  return fetchJson(url, owner, repo);
 }
 
 async function fetchPullRequestFiles(owner, repo, pullNumber) {
@@ -124,7 +139,7 @@ async function fetchPullRequestFiles(owner, repo, pullNumber) {
 
   while (true) {
     const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullNumber}/files?per_page=${perPage}&page=${page}`;
-    const pageFiles = await fetchJson(url);
+    const pageFiles = await fetchJson(url, owner, repo);
 
     if (!Array.isArray(pageFiles) || pageFiles.length === 0) {
       break;
@@ -153,12 +168,12 @@ async function fetchPullRequestFiles(owner, repo, pullNumber) {
 
 async function fetchRepositoryMeta(owner, repo) {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  return fetchJson(url);
+  return fetchJson(url, owner, repo);
 }
 
 async function fetchRepositoryTree(owner, repo, branch) {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`;
-  const response = await fetchJson(url);
+  const response = await fetchJson(url, owner, repo);
   return Array.isArray(response?.tree) ? response.tree : [];
 }
 
@@ -189,7 +204,7 @@ function decodeContent(content = '', encoding = 'base64') {
 
 async function fetchRepositoryFile(owner, repo, filePath) {
   const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${filePath.split('/').map(encodeURIComponent).join('/')}`;
-  const response = await fetchJson(url);
+  const response = await fetchJson(url, owner, repo);
 
   if (Array.isArray(response)) {
     return null;
@@ -297,3 +312,38 @@ module.exports = {
   detectLanguage,
   buildRepositoryContexts,
 };
+
+async function postCheckRun(owner, repo, headSha, name = 'PRSense', summary = '', conclusion = 'neutral') {
+  const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs`;
+  const body = {
+    name,
+    head_sha: headSha,
+    status: 'completed',
+    conclusion,
+    output: {
+      title: name,
+      summary,
+    },
+  };
+  return apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, owner, repo);
+}
+
+async function createPRComment(owner, repo, pullNumber, bodyText, path, line, commitId, position) {
+  const url = `${GITHUB_API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${pullNumber}/comments`;
+  const body = {
+    body: bodyText,
+    commit_id: commitId,
+    path: path,
+  };
+
+  // prefer `position` (diff index) when available since it's more reliable
+  if (Number.isFinite(position) && position > 0) {
+    body.position = position;
+  } else if (Number.isFinite(line) && line > 0) {
+    body.line = line;
+  }
+
+  return apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, owner, repo);
+}
+
+module.exports = Object.assign(module.exports, { postCheckRun, createPRComment });

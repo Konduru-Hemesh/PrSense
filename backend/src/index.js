@@ -6,6 +6,7 @@ const dotenv = require('dotenv');
 const analyzeRoutes = require('./routes/analyze');
 const prRoutes = require('./routes/pr');
 const repoRoutes = require('./routes/repo');
+const webhooksRoutes = require('./routes/webhooks');
 const rateLimiter = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
@@ -28,6 +29,7 @@ app.get('/health', (req, res) => {
 app.use('/api', analyzeRoutes);
 app.use('/api', prRoutes);
 app.use('/api', repoRoutes);
+app.use('/api/webhooks', webhooksRoutes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
